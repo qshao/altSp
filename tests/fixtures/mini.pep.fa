@@ -1,0 +1,8 @@
+>ENSP001 pep:known chromosome:GRCh37:1:1:100:1 gene:ENSG1 transcript:ENST001 gene_biotype:protein_coding transcript_biotype:protein_coding
+MAAAAAAAAAK
+>ENSP002 pep:known chromosome:GRCh37:1:1:90:1 gene:ENSG1 transcript:ENST002 gene_biotype:protein_coding transcript_biotype:protein_coding
+MAAAAAAAAAKDDDD
+>ENSP003 pep:known chromosome:GRCh37:1:1:80:1 gene:ENSG1 transcript:ENST003 gene_biotype:protein_coding transcript_biotype:protein_coding
+MAAAAAAAAAK
+>ENSP010 pep:known chromosome:GRCh37:2:1:100:1 gene:ENSG2 transcript:ENST010 gene_biotype:protein_coding transcript_biotype:protein_coding
+MNNNNNNNNNN

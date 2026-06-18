@@ -1,0 +1,7 @@
+#!genome-build GRCh37
+1	ensembl	gene	1	100	.	+	.	gene_id "ENSG1"; gene_name "TST"; gene_biotype "protein_coding";
+1	ensembl	transcript	1	100	.	+	.	gene_id "ENSG1"; transcript_id "ENST001"; gene_name "TST"; transcript_name "TST-001"; gene_biotype "protein_coding"; transcript_biotype "protein_coding";
+1	ensembl	transcript	1	90	.	+	.	gene_id "ENSG1"; transcript_id "ENST002"; gene_name "TST"; transcript_name "TST-002"; gene_biotype "protein_coding"; transcript_biotype "protein_coding";
+1	ensembl	transcript	1	80	.	+	.	gene_id "ENSG1"; transcript_id "ENST003"; gene_name "TST"; transcript_name "TST-003"; gene_biotype "protein_coding"; transcript_biotype "protein_coding";
+2	ensembl	transcript	1	100	.	+	.	gene_id "ENSG2"; transcript_id "ENST010"; gene_name "NCG"; transcript_name "NCG-001"; gene_biotype "protein_coding"; transcript_biotype "protein_coding";
+2	ensembl	transcript	1	100	.	+	.	gene_id "ENSG2"; transcript_id "ENST011"; gene_name "NCG"; transcript_name "NCG-002"; gene_biotype "protein_coding"; transcript_biotype "retained_intron";
