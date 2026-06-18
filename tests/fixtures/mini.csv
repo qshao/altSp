@@ -1,0 +1,5 @@
+Splice_Event,Gene_Symbol,Gene_ID,Splice_Type,SpliceIn_IsoName,SpliceOut_IsoName,PSI_Difference,FDR_Difference
+TST_ES_1,TST,ENSG1,ES,"TST-001","TST-002",0.3,0.001
+NS_ES_1,TST,ENSG1,ES,"TST-001","TST-002",0.05,0.5
+TST_AP_1,TST,ENSG1,AP,"TST-003","NA",0.2,0.001
+NC_ES_1,NCG,ENSG2,ES,"NCG-001","NCG-002",-0.4,0.002
