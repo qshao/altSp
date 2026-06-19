@@ -1,5 +1,7 @@
 data/
 results/
+results_loose/
+spliceseq_info_PRAD.csv
 __pycache__/
 *.pyc
 .pytest_cache/
