@@ -1,0 +1,4 @@
+endpoint: https://rest.uniprot.org/uniprotkb/search
+query: (organism_id:9606) AND (reviewed:true) AND (keyword:KW-0025) AND ("prostate cancer")
+fields: accession,id,protein_name,gene_names,organism_name,length,keyword,cc_alternative_products,ft_var_seq,cc_disease,cc_function,sequence
+records: 239
