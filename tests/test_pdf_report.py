@@ -1,5 +1,7 @@
 import pandas as pd
-from build_pdf_report import TOP5, NOVEL5, build_html
+from build_pdf_report import (
+    TOP5, NOVEL5, SEQ_REPS, build_html, collect_sequences, render_seq_html,
+)
 
 
 def _df():
@@ -39,6 +41,32 @@ def test_novel5_well_formed():
             assert c[k]
 
 
+def test_render_seq_highlights_changed_region():
+    # prefix 2 identical, suffix 1 identical -> residues 3..4 changed
+    html = render_seq_html("ABCDE", prefix=2, suffix=1)
+    assert "<mark>CD</mark>" in html
+    assert html.startswith("AB")
+    assert html.endswith("E")
+
+
+def test_render_seq_windows_long_sequence():
+    seq = "M" * 1000 + "QWERTY" + "K" * 1000  # changed block in the middle
+    html = render_seq_html(seq, prefix=1000, suffix=1000)
+    assert "<mark>QWERTY</mark>" in html
+    assert "identical]" in html  # long flanks elided
+
+
+def test_collect_sequences_has_before_after_for_featured():
+    seqs = collect_sequences()
+    assert len(seqs) == len(SEQ_REPS)
+    ar = next(s for s in seqs if s["gene"] == "AR")
+    assert ar["available"] and ar["before"] and ar["after"]
+    assert len(ar["before"]) == 920 and len(ar["after"]) == 644
+    # CCND1 is literature-only: no sequence, handled gracefully
+    ccnd1 = next(s for s in seqs if s["gene"] == "CCND1")
+    assert ccnd1["available"] is False
+
+
 def test_build_html_has_core_sections():
     figs = {k: f"/tmp/{k}.png"
             for k in ("sources", "func", "corr", "arv7", "novel")}
@@ -49,5 +77,7 @@ def test_build_html_has_core_sections():
     assert "Novel but credible candidates" in html
     assert "MAP3K7" in html and "EXOC7" in html
     assert "Limitations" in html
+    assert "Before / after protein sequences" in html
+    assert "seqblock" in html and "<mark>" in html
     # corroborated gene AR appears in the table, singleton X is excluded
     assert ">AR<" in html

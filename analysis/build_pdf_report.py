@@ -7,6 +7,8 @@ All disease / NMD / domain-disruption statements are predictions or
 literature-curated annotations, never measurements from this pipeline.
 """
 from __future__ import annotations
+import html as _html
+import json
 import math
 import os
 import re
@@ -22,6 +24,25 @@ from weasyprint import HTML
 MASTER = "results_collected/master_variants.tsv"
 FIGDIR = "results_collected/figures"
 OUT_PDF = "docs/PCa_splicing_comprehensive_report.pdf"
+UNI_IMPACT = "analysis/uniprot_sequence_impact.json"
+TCGA_IMPACT = "analysis/sequence_impact.json"
+FASTA = "results_collected/featured_sequences.fasta"
+
+# Representative before/after variant for each featured gene (Sections 5 & 6).
+# (section, gene, source, variant_id, note). CCND1 is literature-only with no
+# sequence in the pipeline's sources.
+SEQ_REPS = [
+    ("Top 5", "AR", "UniProt", "P10275-3", "AR-V7 (LBD lost)"),
+    ("Top 5", "ITGA6", "UniProt", "P23229-2", "β-propeller isoform"),
+    ("Top 5", "CTNND1", "UniProt", "O60716-2", "p120-1AB"),
+    ("Top 5", "KLF6", "UniProt", "Q99612-3", "truncated isoform"),
+    ("Top 5", "CCND1", "Literature", "", "cyclin D1b — not in pipeline sources"),
+    ("Novel", "MAP3K7", "UniProt", "O43318-4", "NMD-candidate truncation"),
+    ("Novel", "EXOC7", "TCGA", "EXOC7_ES_43570", "DFI HR 5.456 event"),
+    ("Novel", "PRUNE2", "UniProt", "Q8WUY3-4", "C-terminal isoform"),
+    ("Novel", "ENAH", "TCGA", "ENAH_ES_9989", "DFI HR 3.135 event"),
+    ("Novel", "STEAP3", "UniProt", "Q658P3-4", "reductase isoform"),
+]
 
 # Brand palette
 C_AR = "#b1283a"      # AR / resistance red
@@ -343,13 +364,93 @@ def fig_novelty(path):
 
 
 # ----------------------------------------------------------------------------
+# Before/after sequences for the featured cases
+# ----------------------------------------------------------------------------
+def collect_sequences(uni_path=UNI_IMPACT, tcga_path=TCGA_IMPACT) -> list[dict]:
+    """Assemble the representative before/after sequence record per featured gene."""
+    uni = {r["gene"]: r for r in json.load(open(uni_path))}
+    tcga = {o["splice_event"]: o for o in json.load(open(tcga_path))}
+    out = []
+    for section, gene, source, vid, note in SEQ_REPS:
+        rec = {"section": section, "gene": gene, "source": source,
+               "src_id": vid, "note": note, "before": "", "after": "",
+               "prefix": 0, "suffix": 0, "change_class": "", "available": False}
+        if source == "UniProt" and gene in uni:
+            r = uni[gene]
+            iso = next((i for i in r["isoforms"] if i["isoform_id"] == vid), None)
+            if iso:
+                rec.update(before=r["canonical_seq"], after=iso["after_seq"],
+                           prefix=iso["identical_prefix"],
+                           suffix=iso["identical_suffix"],
+                           change_class=iso["change_class"], available=True)
+        elif source == "TCGA" and vid in tcga:
+            o = tcga[vid]
+            rec.update(before=o["before_seq"], after=o["after_seq"],
+                       prefix=o["identical_prefix"], suffix=o["identical_suffix"],
+                       change_class=o["impact_class"], available=True)
+        out.append(rec)
+    return out
+
+
+def render_seq_html(seq, prefix, suffix, full_threshold=700, flank=60,
+                    change_cap=400) -> str:
+    """Monospace HTML with the changed region <mark>-highlighted.
+
+    Long identical flanks (and pathologically long changed regions) are elided
+    with markers; complete sequences live in the FASTA export.
+    """
+    n = len(seq)
+    lo, hi = prefix, n - suffix
+    lo = max(0, min(lo, n))
+    hi = max(lo, min(hi, n))
+    esc = _html.escape
+
+    def changed_block(s):
+        if len(s) > change_cap:
+            k = len(s) - 360
+            return (f"<mark>{esc(s[:180])}</mark>"
+                    f"<span class='elide'>…[{k} aa, changed]…</span>"
+                    f"<mark>{esc(s[-180:])}</mark>")
+        return f"<mark>{esc(s)}</mark>"
+
+    if n <= full_threshold:
+        return esc(seq[:lo]) + changed_block(seq[lo:hi]) + esc(seq[hi:])
+    ps, pe = max(0, lo - flank), min(n, hi + flank)
+    parts = []
+    if ps > 0:
+        parts.append(f"<span class='elide'>…[{ps} aa identical]…</span>")
+    parts.append(esc(seq[ps:lo]))
+    parts.append(changed_block(seq[lo:hi]))
+    parts.append(esc(seq[hi:pe]))
+    if pe < n:
+        parts.append(f"<span class='elide'>…[{n - pe} aa identical]…</span>")
+    return "".join(parts)
+
+
+def write_fasta(records, path=FASTA) -> int:
+    lines, n = [], 0
+    for r in records:
+        if not r["available"]:
+            continue
+        tag = f"{r['gene']}|{r['source']}|{r['src_id']}"
+        for kind, seq in (("before", r["before"]), ("after", r["after"])):
+            lines.append(f">{tag}|{kind} len={len(seq)}")
+            lines.extend(seq[i:i + 60] for i in range(0, len(seq), 60))
+            n += 1
+    open(path, "w").write("\n".join(lines) + "\n")
+    return n
+
+
+# ----------------------------------------------------------------------------
 # HTML assembly
 # ----------------------------------------------------------------------------
 def _abs(p):
     return "file://" + os.path.abspath(p)
 
 
-def build_html(df, figs) -> str:
+def build_html(df, figs, seqs=None) -> str:
+    if seqs is None:
+        seqs = collect_sequences()
     counts = df["source"].value_counts().to_dict()
     n_rows, n_genes = len(df), df["gene"].nunique()
     n_nmd = int((df["nmd_flag"] == "NMD-candidate").sum())
@@ -411,6 +512,37 @@ def build_html(df, figs) -> str:
           </table>
         </div>"""
 
+    # before/after sequence appendix
+    seqblocks = ""
+    for s in seqs:
+        if not s["available"]:
+            seqblocks += f"""
+            <div class="seqcase">
+              <div class="seqhead"><b>{s['gene']}</b>
+                <span class="seqmeta">{s['section']} · {s['source']} · {s['note']}</span></div>
+              <div class="seqna">No before/after protein sequence in the
+              pipeline's UniProt or TCGA sources for this literature-curated
+              variant; see its PMID provenance in the master table.</div>
+            </div>"""
+            continue
+        bl = len(s["before"])
+        al = len(s["after"])
+        lo = s["prefix"] + 1
+        hi_b = bl - s["suffix"]
+        before_html = render_seq_html(s["before"], s["prefix"], s["suffix"])
+        after_html = render_seq_html(s["after"], s["prefix"], s["suffix"])
+        seqblocks += f"""
+        <div class="seqcase">
+          <div class="seqhead"><b>{s['gene']}</b>
+            <span class="seqmeta">{s['section']} · {s['source']} {s['src_id']}
+            · {s['note']} · {s['change_class']} · before {bl} aa → after {al} aa
+            · changed from residue {lo}</span></div>
+          <div class="seqlabel">Before (canonical/reference)</div>
+          <div class="seqblock">{before_html}</div>
+          <div class="seqlabel">After (alternative isoform)</div>
+          <div class="seqblock">{after_html}</div>
+        </div>"""
+
     today = f"{date.today():%Y-%m-%d}"
     src_items = "".join(
         f"<li><b>{s}</b>: {counts.get(s,0)} variant rows</li>"
@@ -468,6 +600,22 @@ def build_html(df, figs) -> str:
     padding: 8px 11px; font-size: 8.8pt; margin: 10px 0; }}
   .limit li {{ font-size: 9pt; }}
   .pagebreak {{ break-before: page; }}
+  .seqcase {{ margin: 9px 0; break-inside: avoid; }}
+  .seqhead {{ font-size: 10pt; color: #111; border-bottom: 1px solid #ddd;
+    padding-bottom: 2px; }}
+  .seqhead b {{ color: {C_AR}; font-size: 11pt; }}
+  .seqmeta {{ font-size: 7.6pt; color: #666; font-weight: normal; }}
+  .seqlabel {{ font-size: 7.8pt; color: {C_BLUE}; font-weight: bold;
+    margin: 4px 0 1px; text-transform: uppercase; letter-spacing: .3px; }}
+  .seqblock {{ font-family: 'DejaVu Sans Mono', monospace; font-size: 6.4pt;
+    line-height: 1.35; white-space: pre-wrap; word-break: break-all;
+    background: #fafbfc; border: 1px solid #e6e8eb; border-radius: 4px;
+    padding: 5px 7px; }}
+  .seqblock mark {{ background: #ffe08a; color: #6b3a00; }}
+  .elide {{ color: #b03a48; font-style: italic; background: #f3e6e8;
+    padding: 0 3px; border-radius: 3px; }}
+  .seqna {{ font-size: 8.4pt; color: #777; font-style: italic;
+    padding: 4px 0; }}
 </style></head><body>
 
 <h1>Alternative Splicing in Prostate Cancer</h1>
@@ -584,6 +732,19 @@ strongest signal but should be treated as the most speculative-by-magnitude.</di
 documented in <code>results_collected/README.md</code>. Caches replay offline
 with <code>--offline</code>.</p>
 
+<div class="pagebreak"></div>
+<h2>Appendix A &nbsp; Before / after protein sequences</h2>
+<p>For each featured case (Sections 5 &amp; 6), the canonical/reference protein
+sequence and the alternative isoform are shown with the
+<mark>changed region highlighted</mark>. Long identical flanks &mdash; and any
+unusually long changed stretch &mdash; are elided with
+<span class="elide">…[N aa]…</span> markers for readability; the
+<b>complete</b> before/after sequences are exported to
+<code>results_collected/featured_sequences.fasta</code>. UniProt cases compare
+the canonical against the curated isoform; TCGA cases compare the protein
+inferred for the splice-event endpoints.</p>
+{seqblocks}
+
 </body></html>"""
 
 
@@ -603,10 +764,13 @@ def build(master_tsv=MASTER, out_pdf=OUT_PDF) -> dict:
     fig_corroboration(df, figs["corr"])
     fig_arv7(figs["arv7"])
     fig_novelty(figs["novel"])
-    html = build_html(df, figs)
+    seqs = collect_sequences()
+    n_fasta = write_fasta(seqs)
+    html = build_html(df, figs, seqs)
     HTML(string=html, base_url=".").write_pdf(out_pdf)
     return {"rows": len(df), "genes": int(df["gene"].nunique()),
-            "pdf": out_pdf, "top5": [c["gene"] for c in TOP5]}
+            "pdf": out_pdf, "top5": [c["gene"] for c in TOP5],
+            "fasta_seqs": n_fasta}
 
 
 def main() -> None:
