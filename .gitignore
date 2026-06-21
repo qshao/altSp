@@ -5,3 +5,5 @@ spliceseq_info_PRAD.csv
 __pycache__/
 *.pyc
 .pytest_cache/
+results_collected/cache/
+results_collected/raw/
