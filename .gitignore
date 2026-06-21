@@ -7,3 +7,4 @@ __pycache__/
 .pytest_cache/
 results_collected/cache/
 results_collected/raw/
+results_collected/figures/
