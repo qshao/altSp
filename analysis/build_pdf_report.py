@@ -22,8 +22,9 @@ import pandas as pd
 from weasyprint import HTML
 
 MASTER = "results_collected/master_variants.tsv"
-FIGDIR = "results_collected/figures"
+FIGDIR = "docs/figures"           # tracked, so the Markdown renders on GitHub
 OUT_PDF = "docs/PCa_splicing_comprehensive_report.pdf"
+OUT_MD = "docs/PCa_splicing_comprehensive_report.md"
 UNI_IMPACT = "analysis/uniprot_sequence_impact.json"
 TCGA_IMPACT = "analysis/sequence_impact.json"
 FASTA = "results_collected/featured_sequences.fasta"
@@ -427,6 +428,31 @@ def render_seq_html(seq, prefix, suffix, full_threshold=700, flank=60,
     return "".join(parts)
 
 
+def render_seq_text(seq, prefix, suffix, full_threshold=700, flank=60,
+                    change_cap=400) -> str:
+    """Plain-text version of render_seq_html; changed region wrapped in «…»."""
+    n = len(seq)
+    lo = max(0, min(prefix, n))
+    hi = max(lo, min(n - suffix, n))
+
+    def chg(s):
+        if len(s) > change_cap:
+            k = len(s) - 360
+            return f"«{s[:180]}…[{k} aa, changed]…{s[-180:]}»"
+        return f"«{s}»"
+
+    if n <= full_threshold:
+        return seq[:lo] + chg(seq[lo:hi]) + seq[hi:]
+    ps, pe = max(0, lo - flank), min(n, hi + flank)
+    parts = []
+    if ps > 0:
+        parts.append(f"…[{ps} aa identical]…")
+    parts.append(seq[ps:lo] + chg(seq[lo:hi]) + seq[hi:pe])
+    if pe < n:
+        parts.append(f"…[{n - pe} aa identical]…")
+    return "".join(parts)
+
+
 def write_fasta(records, path=FASTA) -> int:
     lines, n = [], 0
     for r in records:
@@ -748,6 +774,189 @@ inferred for the splice-event endpoints.</p>
 </body></html>"""
 
 
+def _md(s: str) -> str:
+    """Convert the small HTML-ish snippets in TOP5/NOVEL5 to plain Markdown."""
+    return (s.replace("<b>", "**").replace("</b>", "**")
+             .replace("&ge;", "≥").replace("&mdash;", "—")
+             .replace("&amp;", "&").replace("&nbsp;", " ").replace("&gt;", ">"))
+
+
+def build_markdown(df, figs, seqs=None) -> str:
+    """GitHub-renderable Markdown mirror of the comprehensive PDF report."""
+    if seqs is None:
+        seqs = collect_sequences()
+    counts = df["source"].value_counts().to_dict()
+    n_rows, n_genes = len(df), df["gene"].nunique()
+    n_nmd = int((df["nmd_flag"] == "NMD-candidate").sum())
+    n_dom = int((df["domains_hit"] != "").sum())
+    multi = df[df["corroborating_sources"].astype(int) >= 2]
+    n_multi = multi["gene"].nunique()
+    n_3 = df[df["corroborating_sources"].astype(int) == 3]["gene"].nunique()
+
+    def rel(key):  # figure path relative to docs/
+        return "figures/" + os.path.basename(figs[key])
+
+    L = []
+    L.append("# Alternative Splicing in Prostate Cancer")
+    L.append("\n*A multi-source integration of curated isoforms, cohort splicing "
+             "events, literature variants and normal-tissue baseline — with "
+             "predicted protein-functional impact.*\n")
+    L.append(f"_Generated {date.today():%Y-%m-%d} · Sources: UniProt · TCGA "
+             "SpliceSeq PRAD · ASCancerAtlas · literature (EuropePMC) · GTEx v8 "
+             "baseline._\n")
+    L.append("| Variant rows | Genes | Domain-disrupting | NMD-candidates | "
+             "Multi-source genes |")
+    L.append("|---|---|---|---|---|")
+    L.append(f"| {n_rows} | {n_genes} | {n_dom} | {n_nmd} | {n_multi} |\n")
+
+    L.append("## 1 · Executive summary\n")
+    L.append(f"This report integrates **{n_rows} alternative-splicing variant "
+             f"records across {n_genes} genes** from four independent sources "
+             "into one schema, then annotates each with predicted protein-"
+             "functional consequences (domain disruption, nonsense-mediated-decay "
+             "candidacy, localization signals) using UniProt feature tracks, and "
+             f"contextualises them against the GTEx normal-prostate baseline. "
+             f"{n_dom} records disrupt at least one annotated domain or region and "
+             f"{n_nmd} are predicted NMD candidates. **{n_multi} genes are "
+             f"corroborated by ≥2 independent sources** (of which {n_3} by three), "
+             "forming the highest-confidence shortlist. The androgen-receptor (AR) "
+             "splicing axis — headlined by AR-V7 — is the dominant splicing-driven "
+             "mechanism of therapeutic resistance.\n")
+    for s in ["UniProt", "TCGA", "ASCancerAtlas", "Literature"]:
+        L.append(f"- **{s}**: {counts.get(s, 0)} variant rows")
+    L.append(f"\n![Variant rows by data source]({rel('sources')})\n")
+
+    L.append("## 2 · Methods (brief)\n")
+    L.append("Every source is normalised into a 20-column master schema "
+             "(`master_variants.tsv`). For each variant the canonical and "
+             "alternative protein sequences are aligned to a common prefix/suffix; "
+             "the resulting *changed interval* is intersected with UniProt feature "
+             "tracks (domains, binding sites, zinc-fingers, DNA-binding regions, "
+             "signal/transmembrane segments) to call domain disruption and "
+             "localization changes. A C-terminal truncation losing >50 aa flags a "
+             "protein-level NMD candidate (heuristic). Genes are cross-tabulated by "
+             "source to compute corroboration. GTEx v8 median transcript "
+             "expression provides a normal-prostate isoform baseline.\n")
+    L.append("> **Interpretation note.** Disease, resistance, NMD and domain-"
+             "disruption statements are **predictions or literature-curated "
+             "annotations**, not measurements produced by this pipeline. Cohort "
+             "hazard ratios are univariate, single-cohort, and some Cox fits are "
+             "numerically unstable. CancerSplicingQTL was unreachable (HTTP 403) "
+             "and is omitted.\n")
+
+    L.append("## 3 · Predicted functional-impact landscape\n")
+    L.append(f"![Functional impact]({rel('func')})\n")
+    L.append("In-frame substituted segments and internal deletions dominate, but "
+             f"a substantial tail of frameshift and truncating events feeds the "
+             f"{n_nmd}-strong NMD-candidate pool — isoforms most likely to remove "
+             "protein rather than remodel it.\n")
+
+    L.append("## 4 · Cross-source corroboration\n")
+    L.append("Genes recovered independently by more than one source are the most "
+             "defensible leads. Three genes — **AR, ITGA6, CTNND1** — appear in "
+             "three sources each.\n")
+    L.append(f"![Corroborated genes]({rel('corr')})\n")
+    L.append("| Gene | Sources | Source set | Variants | Best PCa evidence |")
+    L.append("|------|:-------:|-----------|:--------:|-------------------|")
+    order = sorted(multi["gene"].unique(),
+                   key=lambda g: (-int(df[df["gene"] == g]["corroborating_sources"].iloc[0]), g))
+    for g in order:
+        sub = df[df["gene"] == g]
+        srcs = ", ".join(sorted(sub["source"].unique()))
+        ev = next((x for x in sub["pca_evidence"] if x), "")
+        n = int(sub["corroborating_sources"].iloc[0])
+        L.append(f"| **{g}** | {n} | {srcs} | {len(sub)} | {ev} |")
+    L.append("")
+
+    L.append("## 5 · Top 5 splicing cases most relevant to prostate cancer\n")
+    L.append("Ranked by strength and independence of evidence, fidelity of the "
+             "predicted mechanism, and established prostate-cancer / "
+             "therapy-resistance relevance.\n")
+    L.append(f"![AR-V7 domain loss]({rel('arv7')})\n")
+    for c in TOP5:
+        L.append(f"### #{c['rank']} · {c['gene']} — {c['variant']}  "
+                 f"(`{c['uniprot']}`)")
+        L.append(f"*Evidence: {c['sources']}*\n")
+        L.append(f"- **Splicing event:** {_md(c['event'])}")
+        L.append(f"- **Predicted protein impact:** {_md(c['impact'])}")
+        L.append(f"- **Prostate-cancer relevance:** {_md(c['pca'])}")
+        L.append(f"- **Why it ranks here:** {_md(c['why'])}\n")
+
+    L.append("## 6 · Novel but credible candidates\n")
+    L.append("The cases above are well-established biology. This section asks the "
+             "complementary question: which splicing events are **under-studied in "
+             "prostate cancer yet credible**? Each gene below is independently "
+             "relevant to prostate cancer while its *splicing* consequence is "
+             "largely unexplored — surfaced by corroboration, a cohort signal, or "
+             "a predicted NMD/domain hit. Hypothesis-generating leads, not "
+             "established mechanisms.\n")
+    L.append(f"![Novel candidate signal]({rel('novel')})\n")
+    for c in NOVEL5:
+        L.append(f"### N{c['rank']} · {c['gene']} — {c['variant']}  "
+                 f"(`{c['uniprot']}`)")
+        L.append(f"*Evidence: {c['sources']} · {_md(c['signal'])}*\n")
+        L.append(f"- **Splicing event:** {_md(c['event'])}")
+        L.append(f"- **Established PCa context:** {_md(c['known'])}")
+        L.append(f"- **Why it is novel yet credible:** {_md(c['novel'])}\n")
+    L.append("> **Credibility caveat.** The supporting hazard ratios are "
+             "univariate, single-cohort TCGA-PRAD signals and the NMD/domain calls "
+             "are predictions; each candidate needs exon-level validation. EXOC7 "
+             "carries the strongest signal but is the most speculative-by-"
+             "magnitude.\n")
+
+    L.append("## 7 · Limitations\n")
+    for s in [
+        "Functional calls (NMD, domain disruption, disease/resistance links) are "
+        "predictions or curated annotations, not measurements from this analysis.",
+        "Cross-source corroboration is gene-level, not exon/variant-level.",
+        "UniProt isoforms and literature variants are curated presence/absence; "
+        "GTEx provides normal context only; TCGA cohort HRs are univariate, "
+        "single-cohort, and occasionally numerically degenerate.",
+        "The NMD rule is a protein-length heuristic, not a transcript-level "
+        "55-nt-rule evaluation.",
+        "CancerSplicingQTL was unreachable (HTTP 403) and is omitted.",
+    ]:
+        L.append(f"- {s}")
+    L.append("")
+
+    L.append("## 8 · Reproducibility\n")
+    L.append("Generated from `results_collected/master_variants.tsv` and "
+             "`gtex_prostate_baseline.tsv` via `analysis/build_pdf_report.py`. "
+             "Collection and integration steps are documented in "
+             "`results_collected/README.md`.\n")
+
+    L.append("## Appendix A · Before / after protein sequences\n")
+    L.append("For each featured case (Sections 5 & 6), the canonical/reference "
+             "protein sequence and the alternative isoform are shown with the "
+             "changed region wrapped in **«…»** markers. Long identical flanks — "
+             "and any unusually long changed stretch — are elided with "
+             "`…[N aa identical]…` markers; the **complete** before/after "
+             "sequences (18) are in "
+             "[`results_collected/featured_sequences.fasta`]"
+             "(../results_collected/featured_sequences.fasta).\n")
+    for s in seqs:
+        if not s["available"]:
+            L.append(f"### {s['gene']} — {s['section']} · {s['source']}")
+            L.append(f"*{s['note']}.* No before/after protein sequence in the "
+                     "pipeline's UniProt or TCGA sources for this literature-"
+                     "curated variant; see its PMID provenance in the master "
+                     "table.\n")
+            continue
+        bl, al = len(s["before"]), len(s["after"])
+        L.append(f"### {s['gene']} — {s['section']} · {s['source']} "
+                 f"`{s['src_id']}`")
+        L.append(f"{s['note']} · {s['change_class']} · before {bl} aa → after "
+                 f"{al} aa · changed from residue {s['prefix'] + 1}\n")
+        before_t = render_seq_text(s["before"], s["prefix"], s["suffix"])
+        after_t = render_seq_text(s["after"], s["prefix"], s["suffix"])
+        L.append("```text")
+        L.append(f"BEFORE: {before_t}")
+        L.append(f"AFTER : {after_t}")
+        L.append("```\n")
+
+    return "\n".join(L) + "\n"
+
+
 def build(master_tsv=MASTER, out_pdf=OUT_PDF) -> dict:
     os.makedirs(FIGDIR, exist_ok=True)
     df = pd.read_csv(master_tsv, sep="\t").fillna("")
@@ -768,8 +977,9 @@ def build(master_tsv=MASTER, out_pdf=OUT_PDF) -> dict:
     n_fasta = write_fasta(seqs)
     html = build_html(df, figs, seqs)
     HTML(string=html, base_url=".").write_pdf(out_pdf)
+    open(OUT_MD, "w").write(build_markdown(df, figs, seqs))
     return {"rows": len(df), "genes": int(df["gene"].nunique()),
-            "pdf": out_pdf, "top5": [c["gene"] for c in TOP5],
+            "pdf": out_pdf, "md": OUT_MD, "top5": [c["gene"] for c in TOP5],
             "fasta_seqs": n_fasta}
 
 

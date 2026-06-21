@@ -1,6 +1,7 @@
 import pandas as pd
 from build_pdf_report import (
-    TOP5, NOVEL5, SEQ_REPS, build_html, collect_sequences, render_seq_html,
+    TOP5, NOVEL5, SEQ_REPS, build_html, build_markdown, collect_sequences,
+    render_seq_html, render_seq_text,
 )
 
 
@@ -65,6 +66,30 @@ def test_collect_sequences_has_before_after_for_featured():
     # CCND1 is literature-only: no sequence, handled gracefully
     ccnd1 = next(s for s in seqs if s["gene"] == "CCND1")
     assert ccnd1["available"] is False
+
+
+def test_render_seq_text_marks_changed_region():
+    txt = render_seq_text("ABCDE", prefix=2, suffix=1)
+    assert "«CD»" in txt and txt.startswith("AB") and txt.endswith("E")
+
+
+def test_build_markdown_renders_sections_and_figures():
+    figs = {k: f"docs/figures/f_{k}.png"
+            for k in ("sources", "func", "corr", "arv7", "novel")}
+    md = build_markdown(_df(), figs)
+    # headings
+    assert md.startswith("# Alternative Splicing in Prostate Cancer")
+    for h in ["## 1 · Executive summary", "## 5 · Top 5", "## 6 · Novel",
+              "## Appendix A"]:
+        assert h in md
+    # figures referenced with relative paths (render on GitHub)
+    assert "![Variant rows by data source](figures/f_sources.png)" in md
+    assert "figures/f_arv7.png" in md
+    # GFM table + sequence code block + changed-region marker
+    assert "| Gene | Sources |" in md
+    assert "```text" in md and "«" in md
+    # no leftover HTML bold tags from NOVEL5
+    assert "<b>" not in md
 
 
 def test_build_html_has_core_sections():
