@@ -80,6 +80,43 @@ def normalize_tcga(row: dict, impact: dict | None, feats=None) -> dict:
     return out
 
 
+def normalize_literature(row: dict, feats=None) -> dict:
+    out = _blank()
+    out.update(
+        variant_id=f"{row['gene']}|Literature|{row['variant']}",
+        gene=row["gene"], uniprot=row.get("uniprot", ""), source="Literature",
+        source_id=row["variant"], event_type=row.get("event_type", ""),
+        status="literature-reported",
+        change_class=row.get("effect", ""),
+        pca_evidence=row.get("pca_note", ""),
+        provenance=f"PMID:{row.get('pmids','')}".rstrip(":"),
+    )
+    return out
+
+
+def normalize_ascancer(row: dict) -> dict:
+    out = _blank()
+    out.update(
+        variant_id=f"{row['gene']}|ASCancerAtlas|{row.get('as_id','')}",
+        gene=row["gene"], source="ASCancerAtlas",
+        source_id=row.get("as_id", ""), event_type=row.get("event_type", ""),
+        status=row.get("cancer", ""), pca_evidence="ASCancerAtlas PRAD",
+        provenance=f"ASCancerAtlas {row.get('sv_ensembl_id','')}".strip(),
+    )
+    return out
+
+
+def attach_gtex(rows: list[dict], baseline: dict) -> list[dict]:
+    for r in rows:
+        b = baseline.get(r["gene"])
+        if not b:
+            continue
+        tag = "multi-isoform" if b.get("multi_isoform_normal") else "single-isoform"
+        r["gtex_baseline"] = (f"{tag} normal (top {b.get('max_median')}, "
+                              f"2nd {b.get('second_median')} TPM)")
+    return rows
+
+
 def add_corroboration(rows: list[dict]) -> list[dict]:
     srcs = defaultdict(set)
     for r in rows:
@@ -115,7 +152,27 @@ def build_master(offline: bool = False) -> list[dict]:
         acc = (imp or {}).get("uniprot", "")
         rows.append(normalize_tcga(r.to_dict(), imp, feats_for(acc)))
 
-    return add_corroboration(rows)
+    # Literature source (optional intermediate)
+    lit_path = "results_collected/raw/literature_variants.tsv"
+    if os.path.exists(lit_path):
+        for r in pd.read_csv(lit_path, sep="\t").to_dict("records"):
+            feats = feats_for(r.get("uniprot", ""))
+            rows.append(normalize_literature(r, feats))
+
+    # ASCancerAtlas source (optional intermediate)
+    asc_path = "results_collected/raw/ascanceratlas_prad.tsv"
+    if os.path.exists(asc_path):
+        for r in pd.read_csv(asc_path, sep="\t").to_dict("records"):
+            rows.append(normalize_ascancer(r))
+
+    rows = add_corroboration(rows)
+
+    # GTEx normal-prostate context (optional)
+    gtex_path = "results_collected/gtex_prostate_baseline.tsv"
+    if os.path.exists(gtex_path):
+        gb = {r["gene"]: r for r in pd.read_csv(gtex_path, sep="\t").to_dict("records")}
+        rows = attach_gtex(rows, gb)
+    return rows
 
 
 def main() -> None:

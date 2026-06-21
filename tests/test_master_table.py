@@ -1,5 +1,6 @@
 from integrate.master_table import (
     COLUMNS, normalize_uniprot, add_corroboration,
+    normalize_literature, attach_gtex,
 )
 
 
@@ -37,3 +38,22 @@ def test_add_corroboration_counts_distinct_sources():
     by = {(r["gene"], r["source"]): r["corroborating_sources"] for r in out}
     assert by[("ITGA6", "UniProt")] == 2
     assert by[("AR", "UniProt")] == 1
+
+
+def test_normalize_literature_row_shape():
+    row = {"gene": "AR", "uniprot": "P10275", "variant": "AR-V7",
+           "event_type": "cryptic exon (CE3)", "effect": "LBD-truncated",
+           "pca_note": "resistance", "pmids": "25", "query": "q"}
+    out = normalize_literature(row)
+    assert out["source"] == "Literature"
+    assert out["gene"] == "AR" and out["uniprot"] == "P10275"
+    assert "AR-V7" in out["source_id"]
+    assert "25" in out["provenance"]
+
+
+def test_attach_gtex_fills_column():
+    rows = [{"gene": "AR", "gtex_baseline": ""}]
+    base = {"AR": {"max_median": 9.0, "second_median": 4.0,
+                   "multi_isoform_normal": True}}
+    out = attach_gtex(rows, base)
+    assert "multi-isoform" in out[0]["gtex_baseline"]
