@@ -123,6 +123,75 @@ TOP5 = [
 
 
 # ----------------------------------------------------------------------------
+# Novel-but-credible cases: gene is credibly PCa-relevant, but the *splicing*
+# angle is under-studied in prostate cancer. signal = cohort HR / NMD / domain.
+# ----------------------------------------------------------------------------
+NOVEL5 = [
+    {
+        "rank": 1, "gene": "MAP3K7", "variant": "TAK1 NMD-candidate isoforms",
+        "uniprot": "O43318", "sources": "UniProt + ASCancerAtlas",
+        "signal": "2 NMD-candidate isoforms; kinase-domain region affected",
+        "event": "Truncating / frame-disrupting splicing predicted to trigger "
+                 "nonsense-mediated decay.",
+        "known": "MAP3K7 (TAK1) <b>deletion</b> is among the best-characterised "
+                 "events in aggressive PCa (~30–40% of tumours; CHD1 co-deletion "
+                 "drives AR target genes, AR-V7, and enzalutamide resistance).",
+        "novel": "That body of work is about copy-number loss — not splicing. A "
+                 "splicing route to MAP3K7 loss-of-function would phenocopy the "
+                 "deletion, and our NMD-candidate isoforms point exactly there.",
+    },
+    {
+        "rank": 2, "gene": "EXOC7", "variant": "Exo70 epithelial/mesenchymal switch",
+        "uniprot": "Q9UPT5", "sources": "TCGA + ASCancerAtlas",
+        "signal": "Strongest cohort signal in the table (DFI HR ≈ 5.5, risk-up)",
+        "event": "Exocyst Exo70 isoform switching (alternative exon usage).",
+        "known": "Exo70 epithelial↔mesenchymal isoform switching is a proven, "
+                 "ESRP1-controlled invasion driver in breast and colon cancer "
+                 "(mesenchymal isoform recruits Arp2/3 for actin remodelling).",
+        "novel": "Never tested in prostate, yet it carries the single strongest "
+                 "prognostic signal across the whole cohort and is corroborated "
+                 "by two sources — a high-value, untested mechanism.",
+    },
+    {
+        "rank": 3, "gene": "PRUNE2", "variant": "PRUNE2 isoforms (PCA3 locus)",
+        "uniprot": "Q8WUY3", "sources": "TCGA + UniProt",
+        "signal": "4 domain-overlapping isoforms; protective PFI HR ≈ 0.54",
+        "event": "Alternative splicing producing multiple PRUNE2 transcripts.",
+        "known": "PRUNE2 is the validated tumour suppressor at the PCA3 locus — "
+                 "PCA3 being the clinically used prostate-cancer biomarker lncRNA "
+                 "that down-regulates PRUNE2.",
+        "novel": "Maximally prostate-specific credibility, but the individual "
+                 "PRUNE2 isoforms and their suppressor activity remain "
+                 "uncharacterised — a focused splicing question on a marquee "
+                 "prostate gene.",
+    },
+    {
+        "rank": 4, "gene": "ENAH", "variant": "Mena invasion isoforms (MenaINV / 11a)",
+        "uniprot": "Q8N8S7", "sources": "TCGA + ASCancerAtlas",
+        "signal": "Corroborated; DFI HR ≈ 3.1 (risk-up)",
+        "event": "Inclusion of invasion-associated exons (exon 4 / 11a).",
+        "known": "MenaINV and Mena11a are textbook invasion / EMT splicing "
+                 "switches in breast and lung carcinoma.",
+        "novel": "The prostate literature is essentially empty, yet the same "
+                 "actin-regulatory invasion machinery is corroborated here with "
+                 "an adverse cohort signal.",
+    },
+    {
+        "rank": 5, "gene": "STEAP3", "variant": "STEAP3 metalloreductase isoforms",
+        "uniprot": "Q658P3", "sources": "TCGA + UniProt",
+        "signal": "Domain-overlapping isoforms; protective PFI HR ≈ 0.46",
+        "event": "Alternative splicing of the STEAP3 transmembrane reductase.",
+        "known": "STEAP3 belongs to the six-transmembrane epithelial-antigen-of-"
+                 "prostate family (STEAP1/2 are PCa therapy targets); it is a "
+                 "p53-inducible metalloreductase up-regulated across cancers.",
+        "novel": "Its splicing is uncharacterised in prostate cancer despite the "
+                 "family's standing as prostate antigens — an under-explored but "
+                 "well-grounded lead.",
+    },
+]
+
+
+# ----------------------------------------------------------------------------
 # Figures
 # ----------------------------------------------------------------------------
 def fig_sources(df, path):
@@ -235,6 +304,44 @@ def fig_arv7(path):
     plt.close(fig)
 
 
+def fig_novelty(path):
+    """Cohort prognostic signal for the novel candidates (log2 HR)."""
+    # (gene, HR, endpoint, direction); MAP3K7 has no cohort HR (NMD-driven).
+    data = [
+        ("EXOC7", 5.456, "DFI", "risk-up"),
+        ("ENAH", 3.135, "DFI", "risk-up"),
+        ("PRUNE2", 0.544, "PFI", "protective"),
+        ("STEAP3", 0.458, "PFI", "protective"),
+    ]
+    fig, ax = plt.subplots(figsize=(7.6, 2.7))
+    genes = [d[0] for d in data]
+    vals = [math.log2(d[1]) for d in data]
+    cols = [C_AR if d[3] == "risk-up" else C_TEAL for d in data]
+    y = list(range(len(genes)))[::-1]
+    ax.barh(y, vals, color=cols)
+    for yi, (g, hr, ep, dr), v in zip(y, data, vals):
+        ax.text(v + (0.05 if v >= 0 else -0.05), yi,
+                f"{ep} HR {hr:g}", va="center",
+                ha="left" if v >= 0 else "right", fontsize=8)
+    # MAP3K7 row at top (no HR)
+    ax.text(0, len(genes) - 0.0 + 0.0, "", fontsize=8)
+    ax.axvline(0, color="#333", lw=0.8)
+    ax.set_yticks(y)
+    ax.set_yticklabels(genes, fontsize=9)
+    ax.set_xlabel("log₂ hazard ratio  (TCGA-PRAD, univariate)")
+    ax.set_xlim(-1.6, 2.9)
+    ax.set_title("Novel candidates: cohort prognostic signal "
+                 "(MAP3K7 omitted — NMD-driven, no cohort HR)",
+                 fontweight="bold", fontsize=9.5)
+    from matplotlib.patches import Patch
+    ax.legend(handles=[Patch(color=C_AR, label="worse outcome"),
+                       Patch(color=C_TEAL, label="better outcome")],
+              loc="lower right", fontsize=8, frameon=False)
+    fig.tight_layout()
+    fig.savefig(path, bbox_inches="tight")
+    plt.close(fig)
+
+
 # ----------------------------------------------------------------------------
 # HTML assembly
 # ----------------------------------------------------------------------------
@@ -285,6 +392,25 @@ def build_html(df, figs) -> str:
           </table>
         </div>"""
 
+    # novel-but-credible cards
+    ncards = ""
+    for c in NOVEL5:
+        ncards += f"""
+        <div class="case ncase">
+          <div class="case-head">
+            <span class="rank nrank">N{c['rank']}</span>
+            <span class="cgene">{c['gene']}</span>
+            <span class="cvar">{c['variant']}</span>
+            <span class="cacc">{c['uniprot']}</span>
+          </div>
+          <div class="srcline nsrc">Evidence: {c['sources']} &nbsp;·&nbsp; {c['signal']}</div>
+          <table class="ctab">
+            <tr><th>Splicing event</th><td>{c['event']}</td></tr>
+            <tr><th>Established PCa context</th><td>{c['known']}</td></tr>
+            <tr><th>Why it is novel yet credible</th><td>{c['novel']}</td></tr>
+          </table>
+        </div>"""
+
     today = f"{date.today():%Y-%m-%d}"
     src_items = "".join(
         f"<li><b>{s}</b>: {counts.get(s,0)} variant rows</li>"
@@ -332,6 +458,9 @@ def build_html(df, figs) -> str:
   .cacc {{ font-size: 8.5pt; color: #999; margin-left: auto; }}
   .srcline {{ font-size: 8.4pt; color: {C_TEAL}; font-weight: 600;
     margin: 2px 0 5px; }}
+  .ncase {{ border-left: 5px solid {C_BLUE}; }}
+  .nrank {{ background: {C_BLUE}; }}
+  .nsrc {{ color: {C_BLUE}; }}
   .ctab th {{ background: #eef1f5; color: #333; width: 27%;
     font-weight: 600; }}
   .ctab td {{ background: #fff; }}
@@ -417,7 +546,24 @@ mechanism, and established prostate-cancer / therapy-resistance relevance.</p>
 <img src="{_abs(figs['arv7'])}"/>
 {cards}
 
-<h2>6 &nbsp; Limitations</h2>
+<div class="pagebreak"></div>
+<h2>6 &nbsp; Novel but credible candidates</h2>
+<p>The cases in Section 5 are, by design, well-established biology. This section
+asks the complementary question: which splicing events are <b>under-studied in
+prostate cancer yet credible</b>? Each gene below is independently relevant to
+prostate cancer (a known suppressor, antigen family, or invasion driver) while
+its <i>splicing</i> consequence is largely unexplored in the disease — surfaced
+here by cross-source corroboration, a cohort signal, or a predicted
+NMD/domain hit. These are hypothesis-generating leads, not established
+mechanisms.</p>
+<img src="{_abs(figs['novel'])}"/>
+{ncards}
+<div class="note"><b>Credibility caveat.</b> The supporting hazard ratios are
+univariate, single-cohort TCGA-PRAD signals and the NMD/domain calls are
+predictions; each candidate needs exon-level validation. EXOC7 carries the
+strongest signal but should be treated as the most speculative-by-magnitude.</div>
+
+<h2>7 &nbsp; Limitations</h2>
 <ul class="limit">
   <li>Functional calls (NMD, domain disruption, disease/resistance links) are
   predictions or curated annotations, not measurements from this analysis.</li>
@@ -431,7 +577,7 @@ mechanism, and established prostate-cancer / therapy-resistance relevance.</p>
   <li>CancerSplicingQTL was unreachable (HTTP 403) and is omitted.</li>
 </ul>
 
-<h2>7 &nbsp; Reproducibility</h2>
+<h2>8 &nbsp; Reproducibility</h2>
 <p>Generated from <code>results_collected/master_variants.tsv</code> and
 <code>gtex_prostate_baseline.tsv</code> via
 <code>analysis/build_pdf_report.py</code>. Collection and integration steps are
@@ -450,11 +596,13 @@ def build(master_tsv=MASTER, out_pdf=OUT_PDF) -> dict:
         "func": os.path.join(FIGDIR, "f2_funcimpact.png"),
         "corr": os.path.join(FIGDIR, "f3_corroboration.png"),
         "arv7": os.path.join(FIGDIR, "f4_arv7.png"),
+        "novel": os.path.join(FIGDIR, "f5_novelty.png"),
     }
     fig_sources(df, figs["sources"])
     fig_funcimpact(df, figs["func"])
     fig_corroboration(df, figs["corr"])
     fig_arv7(figs["arv7"])
+    fig_novelty(figs["novel"])
     html = build_html(df, figs)
     HTML(string=html, base_url=".").write_pdf(out_pdf)
     return {"rows": len(df), "genes": int(df["gene"].nunique()),

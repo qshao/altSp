@@ -1,5 +1,5 @@
 import pandas as pd
-from build_pdf_report import TOP5, build_html
+from build_pdf_report import TOP5, NOVEL5, build_html
 
 
 def _df():
@@ -28,12 +28,26 @@ def test_top5_well_formed():
             assert c[k]
 
 
+def test_novel5_well_formed():
+    assert len(NOVEL5) == 5
+    assert [c["rank"] for c in NOVEL5] == [1, 2, 3, 4, 5]
+    assert {c["gene"] for c in NOVEL5} == {"MAP3K7", "EXOC7", "PRUNE2",
+                                           "ENAH", "STEAP3"}
+    # novelty cases must distinguish established context from the novel angle
+    for c in NOVEL5:
+        for k in ("event", "known", "novel", "signal", "sources"):
+            assert c[k]
+
+
 def test_build_html_has_core_sections():
-    figs = {k: f"/tmp/{k}.png" for k in ("sources", "func", "corr", "arv7")}
+    figs = {k: f"/tmp/{k}.png"
+            for k in ("sources", "func", "corr", "arv7", "novel")}
     html = build_html(_df(), figs)
     assert "Top 5 splicing cases" in html
     assert "AR-V7" in html
     assert "Cross-source corroboration" in html
+    assert "Novel but credible candidates" in html
+    assert "MAP3K7" in html and "EXOC7" in html
     assert "Limitations" in html
     # corroborated gene AR appears in the table, singleton X is excluded
     assert ">AR<" in html
